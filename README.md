@@ -1,65 +1,53 @@
-# Detection Lab
+# T1053.005 — Scheduled Task: schtasks.exe creation
 
-A home detection engineering lab: Windows endpoint telemetry (Sysmon) forwarded to Splunk, with MITRE ATT&CK techniques simulated using Atomic Red Team and detections written, tested, and tuned against the resulting data.
+## Goal
 
-## Lab architecture
+Detect persistence or execution established via the Windows Task Scheduler through the `schtasks.exe` command-line utility, per [MITRE ATT&CK T1053.005](https://attack.mitre.org/techniques/T1053/005/).
 
+## Data source
+
+Sysmon Event ID 1 (process creation), forwarded via Splunk Universal Forwarder to `index=main`.
+
+## Detection logic
+
+```spl
+index=main source="WinEventLog:Microsoft-Windows-Sysmon/Operational" EventCode=1
+    Image="*\\schtasks.exe" (CommandLine="*/create*" OR CommandLine="*-create*")
+| table _time, host, User, ParentImage, ParentCommandLine, CommandLine
 ```
-+-----------------------------+        TCP 9997        +--------------------------+
-| Windows 11 VM (VMware)      |  ------------------->  | Host laptop              |
-| - Sysmon (SwiftOnSecurity   |   host-only network    | - Splunk Enterprise      |
-|   config)                   |     192.168.22.0/24    | - Indexer + search head  |
-| - Splunk Universal Forwarder|                        |                          |
-| - Atomic Red Team           |                        |                          |
-+-----------------------------+                        +--------------------------+
+
+- `Image="*\\schtasks.exe"` — scoped to the specific binary rather than a bare `schtasks` string match, to reduce accidental matches on unrelated command lines that happen to contain the word.
+- `CommandLine="*/create*" OR CommandLine="*-create*"` — `schtasks.exe` accepts the create flag with either a slash or a dash; an earlier version of this rule only checked for `/create` and would have missed the dash form.
+- `ParentImage` / `ParentCommandLine` included in the output because the parent process is often the more interesting signal — e.g. a task created from a macro-enabled Office document's child process versus an interactive admin session.
+
+## Validation
+
+Ran with [Atomic Red Team](https://github.com/redcanaryco/atomic-red-team) T1053.005 tests, on the VM with the network adapter set to host-only (no internet route) to keep simulation traffic off any real network.
+
+```powershell
+Import-Module "C:\AtomicRedTeam\invoke-atomicredteam\Invoke-AtomicRedTeam.psd1" -Force
+Invoke-AtomicTest T1053.005 -ShowDetailsBrief
+Invoke-AtomicTest T1053.005 -TestNumbers <n>
 ```
 
-- **Hypervisor:** VMware Workstation Pro
-- **Endpoint:** Windows 11 Enterprise (evaluation), 4 GB RAM, 2 vCPU
-- **Telemetry:** Sysmon with SwiftOnSecurity's config, collected through the Windows Event Log input
-- **SIEM:** Splunk Enterprise on the host (receiving on TCP 9997)
-- **Simulation:** Atomic Red Team, run with the VM on a host-only network
+See the [coverage matrix](README.md#coverage-matrix-t1053005) in the README for per-test results.
 
-Build notes and troubleshooting log: [lab-setup.md](lab-setup.md)
+Cleaned up after each run:
 
-## Detections
+```powershell
+Invoke-AtomicTest T1053.005 -TestNumbers <n> -Cleanup
+```
 
-| Technique | Detection | Data source | Status |
-|---|---|---|---|
-| T1053.005 Scheduled Task | [schtasks.exe task creation](T1053.005-scheduled-task.md) | Sysmon Event ID 1 | Tested, gaps documented |
-| T1053.005 Scheduled Task | PowerShell `Register-ScheduledTask` | [Event ID 1 / script block logging] | Planned |
-| T1053.005 Scheduled Task | New file in `C:\Windows\System32\Tasks\` | Sysmon Event ID 11 | Planned |
+## Known gaps
 
-## Coverage matrix: T1053.005
+- **PowerShell `Register-ScheduledTask`** never launches `schtasks.exe`, so this rule does not see it. This is the same technique achieved a different way, and it's the most likely real-world evasion of this specific rule. Planned as a separate detection (either against the Event ID 1 command line for `powershell.exe` + `Register-ScheduledTask`, or against PowerShell Script Block Logging / Event ID 4104 if enabled).
+- **COM-based task creation** (e.g. via the Task Scheduler COM API directly, without touching `schtasks.exe` or the `ScheduledTasks` PowerShell module) would also evade this rule and isn't detected by any rule in this repo yet.
+- A file-creation detection on Sysmon Event ID 11 for new files under `C:\Windows\System32\Tasks\` is planned as a lower-level backstop that any creation method has to touch, regardless of which tool was used.
 
-Each Atomic Red Team test for the technique, and which detections fired. Blank or "no" cells are documented gaps.
+## False positives
 
-| Atomic test | Description | schtasks detection | PowerShell detection | File-create detection |
-|---|---|---|---|---|
-| [#] | [from `-ShowDetailsBrief`] | [fired / no] | [fired / no / not built] | [fired / no / not built] |
-| [#] | | | | |
-| [#] | | | | |
+[Fill in after running the lab under normal use for a few days — note here anything that fired and how the rule was tuned, e.g. software installers or update mechanisms that call schtasks.exe legitimately.]
 
-**Coverage:** [N] of [M] tests detected by at least one rule.
+## Sigma conversion
 
-## Method
-
-For each technique:
-
-1. Read the Atomic Red Team test and predict what telemetry it should produce.
-2. Run the test in the isolated VM and find the events in Splunk.
-3. Write a detection scoped to one behavior.
-4. Run every atomic test for the technique and record what fires.
-5. Leave the lab running under normal use, record false positives, and tune.
-6. Clean up (`Invoke-AtomicTest <technique> -Cleanup`) and document.
-
-## Safety notes
-
-Simulations run only on a host-only network with no internet route. No data from any employer or third party is included in this repository.
-
-## References
-
-- [MITRE ATT&CK T1053.005](https://attack.mitre.org/techniques/T1053/005/)
-- [Atomic Red Team](https://github.com/redcanaryco/atomic-red-team)
-- [SwiftOnSecurity sysmon-config](https://github.com/SwiftOnSecurity/sysmon-config)
-- [SigmaHQ rules](https://github.com/SigmaHQ/sigma)
+[Add once converted with `sigma-cli` — track the .yml file alongside this write-up.]
