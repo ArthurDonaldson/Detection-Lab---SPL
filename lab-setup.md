@@ -1,7 +1,5 @@
 # Lab setup and troubleshooting log
 
-Build notes in the order I actually hit them, including the mistakes. Kept as a real log, not a cleaned-up guide, because the troubleshooting is most of what a detection engineering project should show.
-
 ## Environment
 
 - Host: personal Windows laptop, 16 GB RAM, WSL2 installed
@@ -14,7 +12,7 @@ Build notes in the order I actually hit them, including the mistakes. Kept as a 
 
 1. Installed VMware Workstation Pro, created a host-only network (VMnet1) for the lab, kept a NAT adapter for initial OS setup and downloads.
 2. Built the Windows 11 VM on NAT, since Windows Setup and tool downloads need internet access.
-3. Installed VMware Tools, took a snapshot (`clean install`).
+3. Installed VMware Tools, took a snapshot.
 4. Installed Splunk Enterprise on the host, enabled the receiving port (Settings → Forwarding and receiving → Configure receiving → 9997), added a Windows Firewall inbound rule for TCP 9997.
 5. Installed Sysmon with SwiftOnSecurity's config on the VM.
 6. Installed the Splunk Universal Forwarder on the VM, pointed at the host's VMnet1 address on port 9997.
@@ -28,8 +26,6 @@ Build notes in the order I actually hit them, including the mistakes. Kept as a 
 **Root cause:** the install command (`Sysmon64.exe -accepteula -i sysmonconfig-export.xml`) was run from a non-elevated Command Prompt and failed silently. Nothing in the terminal made this obvious at the time.
 
 **Fix:** re-ran from an actual elevated prompt (title bar confirmed "Administrator: Command Prompt"). Installed cleanly, Event Viewer under `Applications and Services Logs → Microsoft → Windows → Sysmon → Operational` started populating immediately.
-
-**Lesson:** verify the most upstream component first (is the log source even producing data?) before debugging the pipeline that carries it. Also: `index=*` in Splunk does not include internal/system indexes like `_internal` — a bare wildcard search returning nothing is not proof the whole system is broken.
 
 ## Issue 2: forwarder could not read the Sysmon channel (error code 5)
 
@@ -54,8 +50,6 @@ Error 5 is Windows' `ERROR_ACCESS_DENIED`.
 **Root cause:** the Universal Forwarder service was running as the virtual service account `NT SERVICE\SplunkForwarder`, not as Local System. The Sysmon channel's security descriptor (checked with `wevtutil get-log Microsoft-Windows-Sysmon/Operational`) explicitly grants Local System (`SY`), Administrators (`BA`), and a couple of other built-in SIDs — but not the per-service virtual account.
 
 **Fix:** changed the SplunkForwarder service's logon account to Local System (`services.msc` → SplunkForwarder → Log On tab → Local System account), restarted the service. The subscription error was gone on the next restart and events began arriving.
-
-**Alternative not taken:** could have instead added `NT SERVICE\SplunkForwarder` to the built-in **Event Log Readers** group (`net localgroup "Event Log Readers" "NT SERVICE\SplunkForwarder" /add`), which is the more least-privilege-correct fix for a real deployment. Went with Local System here since it's a single-purpose lab VM.
 
 **Lesson:** a channel's ACL and the account a service actually runs under are two independent things worth checking separately — matching one without checking the other still fails silently (a connection can be fully live with no data moving).
 
