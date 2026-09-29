@@ -2,8 +2,6 @@
 
 A home detection engineering lab: Windows endpoint telemetry (Sysmon) forwarded to Splunk, with MITRE ATT&CK techniques simulated using Atomic Red Team and detections written, tested, and tuned against the resulting data.
 
-The goal is not just to write rules, but to document what each rule misses and what it flags by mistake.
-
 ## Lab architecture
 
 ```
@@ -21,7 +19,6 @@ The goal is not just to write rules, but to document what each rule misses and w
 - **Telemetry:** Sysmon with SwiftOnSecurity's config, collected through the Windows Event Log input
 - **SIEM:** Splunk Enterprise on the host (receiving on TCP 9997)
 - **Simulation:** Atomic Red Team, run with the VM on a host-only network
-- **Domain controller:** [ADD WHEN BUILT, OR DELETE THIS LINE]
 
 Build notes and troubleshooting log: [lab-setup.md](lab-setup.md)
 
