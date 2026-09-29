@@ -1,16 +1,13 @@
-# Secrets and credentials — never commit these
 .env
 *.env
 secrets.*
 *apikey*
 *credentials*
 
-# OS/editor noise
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 
-# Atomic Red Team local clone (link to it instead of vendoring it)
 atomic-red-team/
 AtomicRedTeam/
